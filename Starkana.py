@@ -1,9 +1,10 @@
-from urllib import urlopen
+from urllib2 import urlopen
 import re, os, zipfile, shutil, sys, time
 from threading import Thread
+import imghdr
+from bs4 import BeautifulSoup
 
 global thread_count
-global fail_image
 
 def download(url, retries):
         tries = 0
@@ -15,54 +16,53 @@ def download(url, retries):
                         tries = tries + 1
         return None 
 
-def i_download(url, path):
+def image_download(url, path):
 	buffer=download(url, 4)
-        global fail_image
-
 	if buffer != None:
                 buffer = buffer.read()
                 image=file(path, "wb")
                 image.write(buffer)
                 del image
-        else:
-                image = file(path, "wb")
-                image.write(fail_image)
-                del image
+		ext = imghdr.what(path)
+		os.rename(path, path+"."+ext)
 	
-			
-def manga_download(manga, chapter):
+	else:
+		print "Error"
+
+
+#download manga-chapter from a given url
+#eg - http://starkana.com/manga/S/Sun-ken_Rock/chapter/12
+def ch_download(url):
 	global thread_count
-        
-	output_path=os.path.join(os.getcwd(), manga+" "+'{:0>3}'.format(chapter))
-	
+	chapter = url.rsplit('/', 1)[1]
+	manga = url.rsplit('/', 3)[1]
+	output_path = os.path.join(os.getcwd(), manga+" "+'{:0>3}'.format(chapter))
 	if os.path.isdir(output_path)==False:
 		os.mkdir(output_path);
+
+	webpage = download(url+"?scroll", 4).read()
+	soup = BeautifulSoup(webpage)
+	img_list = soup.find_all("img", class_="dyn")
+	if len(img_list) != 0:
+		#download
+		for i in range(0, len(img_list)):
+			img_url = img_list[i]['src']
+			img_path = os.path.join(output_path, "ch" + '{:0>3}'.format(chapter)+ "pg" + '{:0>3}'.format(i+1))
+			image_download(img_url, img_path)
 	
-	url = "http://www.starkana.com/manga/"+manga[0]+"/"+manga+"/chapter/"+str(chapter)+"?scroll"
-        
-	#print url
-	webpage = download(url, 4)
-	if webpage == None:
-                print manga, chapter, "Fail"
-                return
-	webpage = webpage.read()
-	#print len(webpage)
+	else:
+		#sequential download
+		webpage = download(url, 4).read()
+		soup = BeautifulSoup(webpage)
+		t_pages = int( soup.find(id='reader-nav').strong.text )
+		for i in range(1, t_pages+1):
+			webpage = download(url+"/"+str(i), 4).read()
+			soup = BeautifulSoup(webpage)
+			img_url = soup.find(class_='dyn')['src']
+			img_path = os.path.join(output_path, "ch" + '{:0>3}'.format(chapter)+"pg"+"{:0>3}".format(i))
+			image_download(img_url, img_path)
 
-	s=re.findall(r'http://manga\.starkana\.com.*[(jpg)(png)]', webpage)
-        #print s
-	page = 1        
-	c_s = '{:0>3}'.format(chapter)	
 
-	for u in s:
-		p_s = '{:0>3}'.format(page) 
-		
-                ext = u.rsplit('.', 1)
-		ext = ext[1]
-		
-		path=os.path.join(output_path, "ch"+c_s+"_pg"+p_s+"."+ext) 
-		i_download(u, path)
-		page = page + 1
-        
 	zip = zipfile.ZipFile(output_path+".cbz", 'w')
 	for root, dirs, files in os.walk(output_path):
                 for f in files:
@@ -73,32 +73,22 @@ def manga_download(manga, chapter):
         thread_count = thread_count - 1
 	return
 
-			
-			
+
 if __name__=='__main__':
-	
 	manga=sys.argv[1]
 	i=int(sys.argv[2])
-	j=int(sys.argv[3])
-
+	j = int(sys.argv[3])
+	
 	global thread_count
-
-        global fail_image
-        fail_image = download("http://www.failfunnies.com/28/images/roomate-of-fail.jpg", 4)
-        fail_image = fail_image.read()
-
 	max_count = 32
 	thread_count = 0
-	
 	threadlist=[]
 	
 	while i<=j:
-                #manga_download(manga, i)
-                #i = i+1
-
 		while thread_count >= max_count:
 			time.sleep(5)
-		t=Thread(target=manga_download, args=(manga, i))
+		url = "http://www.starkana.com/manga/"+manga[0]+"/"+manga+"/chapter/"+str(i)
+		t=Thread(target=ch_download, args=(url,))
 		t.start()
 		threadlist.append(t)
 		i=i+1
