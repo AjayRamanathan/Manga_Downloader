@@ -14,7 +14,8 @@ def download(url, retries):
                         return content
                 except:
                         tries = tries + 1
-        return None 
+        print "download_error -", url
+	return None 
 
 def image_download(url, path):
 	buffer=download(url, 4)
@@ -24,11 +25,9 @@ def image_download(url, path):
                 image.write(buffer)
                 del image
 		ext = imghdr.what(path)
-		os.rename(path, path+"."+ext)
+		if ext:
+			os.rename(path, path+"."+ext)
 	
-	else:
-		print "Error"
-
 
 #download manga-chapter from a given url
 #eg - http://starkana.com/manga/S/Sun-ken_Rock/chapter/12
@@ -75,24 +74,59 @@ def ch_download(url):
 
 
 if __name__=='__main__':
-	manga=sys.argv[1]
-	i=int(sys.argv[2])
-	j = int(sys.argv[3])
+	manga = ""
+	i = 0
+	j = -1
 	
+	#print len(sys.argv)
+
+	if len(sys.argv) == 4:
+		manga=sys.argv[1]
+		i=int(sys.argv[2])
+		j = int(sys.argv[3])
+	
+	if len(sys.argv) == 3:
+		manga = sys.argv[1]
+		i = int(sys.argv[2])
+		j = i
+	
+	url_list = []
 	global thread_count
 	max_count = 32
 	thread_count = 0
 	threadlist=[]
 	
+	#add chapter urls of the range of chapters
 	while i<=j:
+		url = "http://www.starkana.com/manga/"+manga[0]+"/"+manga+"/chapter/"+str(i)
+		url_list.append(url)
+		i=i+1
+
+	#add urls of all the chapters of the manga
+	if len(sys.argv) == 2:
+		url = sys.argv[1]
+		#print url
+		webpage = download(url+"?mature_confirm=1", 4).read()
+		#print webpage
+		soup = BeautifulSoup(webpage)
+		all_chap = soup.find_all(class_="download-link")
+		for chap in all_chap:
+			d_link = chap['href']
+			d_link = "http://www.starkana.com"+d_link
+			#download if not a sub-chapter 
+			chapter = d_link.rsplit('/', 1)[1]
+			dot = chapter.find('.')
+			if dot == -1:
+				url_list.append(d_link)
+
+	#now download all the chapters in url_list
+	for u in url_list:
 		while thread_count >= max_count:
 			time.sleep(5)
-		url = "http://www.starkana.com/manga/"+manga[0]+"/"+manga+"/chapter/"+str(i)
-		t=Thread(target=ch_download, args=(url,))
+		t = Thread(target=ch_download, args=(u,))
 		t.start()
 		threadlist.append(t)
-		i=i+1
-		thread_count=thread_count+1
-
+		thread_count = thread_count + 1
+	
 	for t in threadlist:
 		t.join()
